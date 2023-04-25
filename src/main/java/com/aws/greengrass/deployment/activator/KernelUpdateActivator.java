@@ -55,18 +55,18 @@ public class KernelUpdateActivator extends DeploymentActivator {
     @Override
     public void activate(Map<String, Object> newConfig, Deployment deployment,
                          CompletableFuture<DeploymentResult> totallyCompleteFuture) {
-        if (!takeConfigSnapshot(totallyCompleteFuture)) {
-            return;
-        }
-
-        if (!kernelAlternatives.isLaunchDirSetup()) {
-            totallyCompleteFuture.complete(
-                    new DeploymentResult(DeploymentResult.DeploymentStatus.FAILED_NO_STATE_CHANGE,
-                            new DeploymentException("Unable to process deployment. Greengrass launch directory"
-                                    + " is not set up or Greengrass is not set up as a system service",
-                                    DeploymentErrorCode.LAUNCH_DIRECTORY_CORRUPTED)));
-            return;
-        }
+//        if (!takeConfigSnapshot(totallyCompleteFuture)) {
+//            return;
+//        }
+//
+//        if (!kernelAlternatives.isLaunchDirSetup()) {
+//            totallyCompleteFuture.complete(
+//                    new DeploymentResult(DeploymentResult.DeploymentStatus.FAILED_NO_STATE_CHANGE,
+//                            new DeploymentException("Unable to process deployment. Greengrass launch directory"
+//                                    + " is not set up or Greengrass is not set up as a system service",
+//                                    DeploymentErrorCode.LAUNCH_DIRECTORY_CORRUPTED)));
+//            return;
+//        }
 
         DeploymentDocument deploymentDocument = deployment.getDeploymentDocumentObj();
         KernelLifecycle lifecycle = kernel.getContext().get(KernelLifecycle.class);
