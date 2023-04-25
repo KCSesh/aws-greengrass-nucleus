@@ -7,7 +7,7 @@ services:
         windowsUser: integ-tester
   bar:
     lifecycle:
-      run: echo bar-service phase 3
+      run: echo bar-service
   main:
     lifecycle:
       install:

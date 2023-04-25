@@ -7,8 +7,12 @@ package com.aws.greengrass.integrationtests.deployment;
 
 import com.aws.greengrass.config.PlatformResolver;
 import com.aws.greengrass.config.Topics;
+import com.aws.greengrass.dependency.Context;
 import com.aws.greengrass.dependency.State;
 import com.aws.greengrass.deployment.DeploymentConfigMerger;
+import com.aws.greengrass.deployment.DeploymentDirectoryManager;
+import com.aws.greengrass.deployment.activator.DeploymentActivator;
+import com.aws.greengrass.deployment.activator.KernelUpdateActivator;
 import com.aws.greengrass.deployment.model.ComponentUpdatePolicy;
 import com.aws.greengrass.deployment.model.Deployment;
 import com.aws.greengrass.deployment.model.DeploymentDocument;
@@ -17,10 +21,7 @@ import com.aws.greengrass.deployment.model.FailureHandlingPolicy;
 import com.aws.greengrass.integrationtests.BaseITCase;
 import com.aws.greengrass.integrationtests.ipc.IPCTestUtils;
 import com.aws.greengrass.integrationtests.util.ConfigPlatformResolver;
-import com.aws.greengrass.lifecyclemanager.GenericExternalService;
-import com.aws.greengrass.lifecyclemanager.GlobalStateChangeListener;
-import com.aws.greengrass.lifecyclemanager.GreengrassService;
-import com.aws.greengrass.lifecyclemanager.Kernel;
+import com.aws.greengrass.lifecyclemanager.*;
 import com.aws.greengrass.lifecyclemanager.exceptions.ServiceLoadException;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.GreengrassLogMessage;
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
 import software.amazon.awssdk.aws.greengrass.GreengrassCoreIPCClient;
 import software.amazon.awssdk.aws.greengrass.model.ComponentUpdatePolicyEvents;
 import software.amazon.awssdk.aws.greengrass.model.DeferComponentUpdateRequest;
@@ -48,6 +50,7 @@ import software.amazon.awssdk.eventstreamrpc.StreamResponseHandler;
 import software.amazon.awssdk.services.greengrassv2.model.DeploymentConfigurationValidationPolicy;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -91,6 +94,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 import static software.amazon.awssdk.services.greengrassv2.model.DeploymentComponentUpdatePolicyAction.NOTIFY_COMPONENTS;
 import static software.amazon.awssdk.services.greengrassv2.model.DeploymentComponentUpdatePolicyAction.SKIP_NOTIFY_COMPONENTS;
 
@@ -100,6 +105,8 @@ class DeploymentConfigMergingTest extends BaseITCase {
     private DeploymentConfigMerger deploymentConfigMerger;
     private static SocketOptions socketOptions;
     private static Logger logger = LogManager.getLogger(DeploymentConfigMergingTest.class);
+    @Mock
+    private DeploymentDirectoryManager deploymentDirectoryManager;
 
     @BeforeAll
     static void initialize() {
@@ -107,8 +114,9 @@ class DeploymentConfigMergingTest extends BaseITCase {
     }
 
     @BeforeEach
-    void before() {
+    void before() throws IOException {
         kernel = new Kernel();
+        kernel.getContext().put(DeploymentDirectoryManager.class, deploymentDirectoryManager);
         NoOpPathOwnershipHandler.register(kernel);
         deploymentConfigMerger = kernel.getContext().get(DeploymentConfigMerger.class);
     }
@@ -125,6 +133,37 @@ class DeploymentConfigMergingTest extends BaseITCase {
         if (socketOptions != null) {
             socketOptions.close();
         }
+    }
+
+    @Test
+    void GIVEN_kernel_running_single_service_WHEN_config_with_bootstrap_is_merged_THEN_services_wait_for_config_merge()
+            throws Throwable {
+        // GIVEN
+        ConfigPlatformResolver.initKernelWithMultiPlatformConfig(kernel, getClass().getResource("config.yaml"));
+        CountDownLatch mainRunning = new CountDownLatch(1);
+        kernel.getContext().addGlobalStateChangeListener((service, oldState, newState) -> {
+            if (service.getName().equals("main") && newState.equals(State.RUNNING)) {
+                mainRunning.countDown();
+            }
+        });
+        kernel.launch();
+
+        // WHEN
+        CountDownLatch mainRestarted = new CountDownLatch(1);
+        kernel.getContext().addGlobalStateChangeListener((service, oldState, newState) -> {
+            if (service.getName().equals("main") && newState.equals(State.RUNNING) && oldState.equals(State.STARTING)) {
+                mainRestarted.countDown();
+            }
+        });
+        Map<String, Object> newConfig = ConfigPlatformResolver
+                .resolvePlatformMap(getClass().getResource("config_with_bootstrap.yaml"));
+        ((Map<String, Object>)newConfig.get(SERVICES_NAMESPACE_TOPIC)).put(DEFAULT_NUCLEUS_COMPONENT_NAME,
+                getNucleusConfig());
+
+        when(deploymentDirectoryManager.getSnapshotFilePath()).thenReturn(mock(Path.class));
+//        doReturn(mock(Path.class)).when(deploymentDirectoryManager.getSnapshotFilePath());
+        doNothing().when(deploymentDirectoryManager).takeConfigSnapshot(any());
+        deploymentConfigMerger.mergeInNewConfig(testDeploymentSkipNotify(), newConfig).get(60, TimeUnit.SECONDS);
     }
 
     @Test
@@ -712,6 +751,17 @@ class DeploymentConfigMergingTest extends BaseITCase {
                 .failureHandlingPolicy(FailureHandlingPolicy.DO_NOTHING)
                 .componentUpdatePolicy(
                         new ComponentUpdatePolicy(3, NOTIFY_COMPONENTS))
+                .configurationValidationPolicy(DeploymentConfigurationValidationPolicy.builder()
+                        .timeoutInSeconds(20).build())
+                .build();
+        return new Deployment(doc, Deployment.DeploymentType.IOT_JOBS, "jobId", DEFAULT);
+    }
+
+    private Deployment testDeploymentSkipNotify() {
+        DeploymentDocument doc = DeploymentDocument.builder().timestamp(System.currentTimeMillis()).deploymentId("id")
+                .failureHandlingPolicy(FailureHandlingPolicy.DO_NOTHING)
+                .componentUpdatePolicy(
+                        new ComponentUpdatePolicy(3, SKIP_NOTIFY_COMPONENTS))
                 .configurationValidationPolicy(DeploymentConfigurationValidationPolicy.builder()
                         .timeoutInSeconds(20).build())
                 .build();
