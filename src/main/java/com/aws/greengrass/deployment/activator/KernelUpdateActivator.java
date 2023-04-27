@@ -55,6 +55,7 @@ public class KernelUpdateActivator extends DeploymentActivator {
     @Override
     public void activate(Map<String, Object> newConfig, Deployment deployment,
                          CompletableFuture<DeploymentResult> totallyCompleteFuture) {
+        logger.atDebug().log("Activating kernel update");
 //        if (!takeConfigSnapshot(totallyCompleteFuture)) {
 //            return;
 //        }

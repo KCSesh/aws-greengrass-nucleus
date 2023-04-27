@@ -507,6 +507,7 @@ public class KernelLifecycle {
         close(tlog);
         // Update effective config with our last known state
         kernel.writeEffectiveConfig();
+        logger.atDebug(SYSTEM_SHUTDOWN_EVENT).log("End soft shutdown");
     }
 
     public void shutdown() {

@@ -9,9 +9,6 @@ services:
     lifecycle:
       run: echo bar-service
   main:
-    lifecycle:
-      install:
-        all: echo All installed
     dependencies:
       - bar
       - aws.greengrass.Nucleus

@@ -2,20 +2,16 @@
 services:
   foo:
     lifecycle:
+      install: echo installing foo-service
       run: echo foo-service
   bar:
     lifecycle:
       run: echo bar-service
-    dependencies:
-      - foo
   com:
     lifecycle:
       bootstrap: echo bootstrapping; exit 100
       run: echo com-service
   main:
-    lifecycle:
-      install:
-        all: echo All installed
     dependencies:
       - foo
       - bar

@@ -86,6 +86,7 @@ public abstract class DeploymentActivator {
     }
 
     protected void updateConfiguration(long timestamp, Map<String, Object> newConfig) {
+        logger.atDebug().kv("config", newConfig).log();
         // when deployment adds a new dependency (component B) to component A
         // the config for component B has to be merged in before externalDependenciesTopic of component A trigger
         // executing mergeMap using publish thread ensures this

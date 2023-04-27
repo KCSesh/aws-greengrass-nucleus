@@ -13,6 +13,7 @@ import com.aws.greengrass.deployment.DeploymentConfigMerger;
 import com.aws.greengrass.deployment.DeploymentDirectoryManager;
 import com.aws.greengrass.deployment.activator.DeploymentActivator;
 import com.aws.greengrass.deployment.activator.KernelUpdateActivator;
+import com.aws.greengrass.deployment.bootstrap.BootstrapManager;
 import com.aws.greengrass.deployment.model.ComponentUpdatePolicy;
 import com.aws.greengrass.deployment.model.Deployment;
 import com.aws.greengrass.deployment.model.DeploymentDocument;
@@ -26,6 +27,7 @@ import com.aws.greengrass.lifecyclemanager.exceptions.ServiceLoadException;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.GreengrassLogMessage;
 import com.aws.greengrass.logging.impl.LogManager;
+import com.aws.greengrass.logging.impl.config.LogConfig;
 import com.aws.greengrass.status.FleetStatusService;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import com.aws.greengrass.testcommons.testutilities.NoOpPathOwnershipHandler;
@@ -39,6 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.slf4j.event.Level;
 import software.amazon.awssdk.aws.greengrass.GreengrassCoreIPCClient;
 import software.amazon.awssdk.aws.greengrass.model.ComponentUpdatePolicyEvents;
 import software.amazon.awssdk.aws.greengrass.model.DeferComponentUpdateRequest;
@@ -107,6 +110,10 @@ class DeploymentConfigMergingTest extends BaseITCase {
     private static Logger logger = LogManager.getLogger(DeploymentConfigMergingTest.class);
     @Mock
     private DeploymentDirectoryManager deploymentDirectoryManager;
+    @Mock
+    private BootstrapManager bootstrapManager;
+    @Mock
+    private KernelAlternatives kernelAlternatives;
 
     @BeforeAll
     static void initialize() {
@@ -139,7 +146,12 @@ class DeploymentConfigMergingTest extends BaseITCase {
     void GIVEN_kernel_running_single_service_WHEN_config_with_bootstrap_is_merged_THEN_services_wait_for_config_merge()
             throws Throwable {
         // GIVEN
+        LogConfig.getRootLogConfig().setLevel(Level.DEBUG);
         ConfigPlatformResolver.initKernelWithMultiPlatformConfig(kernel, getClass().getResource("config.yaml"));
+        kernel.getContext().put(DeploymentDirectoryManager.class, deploymentDirectoryManager);
+        kernel.getContext().put(BootstrapManager.class, bootstrapManager);
+        kernel.getContext().put(KernelAlternatives.class, kernelAlternatives);
+
         CountDownLatch mainRunning = new CountDownLatch(1);
         kernel.getContext().addGlobalStateChangeListener((service, oldState, newState) -> {
             if (service.getName().equals("main") && newState.equals(State.RUNNING)) {
@@ -161,8 +173,10 @@ class DeploymentConfigMergingTest extends BaseITCase {
                 getNucleusConfig());
 
         when(deploymentDirectoryManager.getSnapshotFilePath()).thenReturn(mock(Path.class));
-//        doReturn(mock(Path.class)).when(deploymentDirectoryManager.getSnapshotFilePath());
         doNothing().when(deploymentDirectoryManager).takeConfigSnapshot(any());
+        doNothing().when(bootstrapManager).persistBootstrapTaskList(any());
+        doReturn(true).when(bootstrapManager).isBootstrapRequired(any());
+        doNothing().when(kernelAlternatives).prepareBootstrap(any());
         deploymentConfigMerger.mergeInNewConfig(testDeploymentSkipNotify(), newConfig).get(60, TimeUnit.SECONDS);
     }
 
