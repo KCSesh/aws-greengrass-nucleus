@@ -8,6 +8,7 @@ package com.aws.greengrass.lifecyclemanager;
 import com.amazon.aws.iot.greengrass.component.common.DependencyType;
 import com.aws.greengrass.config.Topic;
 import com.aws.greengrass.config.Topics;
+import com.aws.greengrass.config.Watcher;
 import com.aws.greengrass.config.WhatHappened;
 import com.aws.greengrass.dependency.ComponentStatusCode;
 import com.aws.greengrass.dependency.Context;
@@ -26,6 +27,7 @@ import com.aws.greengrass.util.Pair;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -84,6 +86,8 @@ public class GreengrassService implements InjectionActions {
 
     // dependencies that are explicitly declared by customer in config store.
     private final Topic externalDependenciesTopic;
+    @Getter @Setter
+    private Watcher externalDependenciesTopicWatcher;
     // Services that this service depends on.
     // Includes both explicit declared dependencies and implicit ones added through 'autoStart' and @Inject annotation.
     protected final ConcurrentHashMap<GreengrassService, DependencyInfo> dependencies = new ConcurrentHashMap<>();
@@ -203,7 +207,7 @@ public class GreengrassService implements InjectionActions {
                 } catch (ServiceLoadException | InputValidationException e) {
                     logger.atError().log("Error while setting up dependencies from subscription", e);
                 }
-            });
+            }, this);
 
             try {
                 setupDependencies((Collection<String>) externalDependenciesTopic.getOnce());
@@ -449,6 +453,7 @@ public class GreengrassService implements InjectionActions {
                         logger.error("Interrupted waiting for dependers to exit");
                     }
                 }
+                externalDependenciesTopic.remove(externalDependenciesTopicWatcher);
                 lifecycle.setClosed(true);
                 requestStop();
 

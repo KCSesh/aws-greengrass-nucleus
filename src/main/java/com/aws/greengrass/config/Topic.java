@@ -6,6 +6,7 @@
 package com.aws.greengrass.config;
 
 import com.aws.greengrass.dependency.Context;
+import com.aws.greengrass.lifecyclemanager.GreengrassService;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
 
@@ -49,6 +50,27 @@ public class Topic extends Node {
         if (addWatcher(s)) {
             // invoke the new subscriber right away
             s.published(WhatHappened.initialized, this);
+        }
+        return this;
+    }
+
+    /**
+     * Subscribe to a topic and invoke the subscriber right away on the same thread for a new subscriber.
+     * <p>
+     * This is the preferred way to get a value from a configuration. Instead of {@code setValue(configValue.getOnce())}
+     * use {@code configValue.get((nv,ov)->setValue(nv)) }
+     * This way, every change to the config file will get forwarded to the object.
+     *</p>
+     *
+     * @param s subscriber
+     * @param service service subscribing to dependency topic
+     * @return this topic
+     */
+    public Topic subscribe(Subscriber s, GreengrassService service) {
+        if (addWatcher(s)) {
+            // invoke the new subscriber right away
+            s.published(WhatHappened.initialized, this);
+            service.setExternalDependenciesTopicWatcher(s);
         }
         return this;
     }
